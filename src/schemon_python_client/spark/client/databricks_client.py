@@ -8,6 +8,8 @@ from schemon_python_client.spark.credential_manager.unity_catalog_credential_man
     UnityCatalogCredentialManager,
 )
 from schemon_python_logger.print import print_sql
+from pyspark.sql.types import StructType, TimestampType
+from pyspark.sql.streaming import StreamingQuery
 
 
 class DatabricksClient(Client):
@@ -32,7 +34,7 @@ class DatabricksClient(Client):
     def list_tables(self, database: str, schema: str) -> SparkDataFrame:
         try:
             query = f"SHOW TABLES IN {database}.{schema}"
-            df = self.execute_query(self.spark, query)
+            df = self.execute_query(query)
             return df
         except AnalysisException as e:
             print(f"An error occurred while listing tables: {str(e)}")
@@ -295,4 +297,128 @@ class DatabricksClient(Client):
 
         except AnalysisException as e:
             print(f"An error occurred while unpivoting: {str(e)}")
+            raise e
+
+    def read_stream(
+        self,
+        path: str,
+        schema: StructType = None,
+        use_autoloader: bool = False,
+        format: str = "delta",
+        options: dict = None,
+        watermark_column: str = None,
+        watermark_delay: str = "10 minutes",
+        input_file_name_column: str = "Source",
+        file_modification_time_column: str = "SourceModifiedAt",
+    ) -> SparkDataFrame:
+        """
+        Method to handle reading a stream using either a regular readStream or Auto Loader.
+
+        :param path: The path to read the stream from.
+        :param schema: The schema to apply to the streaming data.
+        :param use_autoloader: Flag to indicate if Auto Loader should be used.
+        :param format: The format of the files (e.g., "parquet", "json", etc.).
+        :param options: Dictionary of options to pass to the reader.
+        :param watermark_column: The column to apply the watermark on.
+        :param watermark_delay: The delay threshold for watermarking (e.g., "10 minutes").
+        :return: A streaming DataFrame.
+        """
+        try:
+            if options is None:
+                options = {}
+
+            if use_autoloader:
+                # Databricks Autoloader supports csv, json, parquet, text, binaryFile and delta.
+                supported_formats_with_metadata = {
+                    "csv",
+                    "json",
+                    "parquet",
+                    "text",
+                    "binaryFile",
+                }
+                # Use Auto Loader with .load() method
+                stream_df = (
+                    self.spark.readStream.format("cloudFiles")
+                    .option("cloudFiles.format", format)
+                    .options(**options)
+                    .schema(schema)
+                    .load(path)
+                    .withColumn(
+                        input_file_name_column, F.input_file_name()
+                    )  # Add Source column for all formats. For Delta tables in UC, it returns NULL
+                )
+
+                # Conditionally add SourceModifiedAt for supported formats
+                if format in supported_formats_with_metadata:
+                    stream_df = stream_df.withColumn(
+                        file_modification_time_column,
+                        F.col("_metadata.file_modification_time").cast(TimestampType()),
+                    )
+            else:
+                # Use regular readStream
+                stream_df = (
+                    self.spark.readStream.format(format).options(**options).load(path)
+                )
+
+            # Apply watermarking if both column and delay are specified
+            if watermark_column and watermark_delay:
+                stream_df = stream_df.withWatermark(watermark_column, watermark_delay)
+
+            return stream_df
+
+        except Exception as e:
+            print(f"An error occurred while reading the stream: {str(e)}")
+            raise e
+
+    def write_stream(
+        self,
+        df: SparkDataFrame,
+        database: str,
+        schema: str,
+        table: str,
+        checkpoint_path: str,
+        output_mode: str = "append",
+        trigger_interval: str = "10 seconds",
+        foreach_batch_function: callable = None,
+        **kwargs,
+    ) -> StreamingQuery:
+        """
+        Write streaming DataFrame to a Delta table.
+
+        :param df: The streaming DataFrame to write.
+        :param database: The database name.
+        :param schema: The schema name.
+        :param table: The table name.
+        :param checkpoint_path: Path to store checkpoint information.
+        :param output_mode: The output mode, typically "append", "complete", or "update".
+        :param trigger_interval: Trigger interval for streaming, e.g., "10 seconds".
+        :param foreach_batch_function: Optional custom function to process each batch (used in foreachBatch).
+        :return: StreamingQuery object.
+        """
+        target_table = f"{database}.{schema}.{table}"
+
+        try:
+            write_stream = (
+                df.writeStream.format("delta")
+                .outputMode(output_mode)
+                .option("checkpointLocation", checkpoint_path)
+                .trigger(processingTime=trigger_interval)
+            )
+
+            # Use foreachBatch if a custom function is provided
+            if foreach_batch_function:
+                write_stream = write_stream.foreachBatch(
+                    lambda batch_df, epoch_id: foreach_batch_function(
+                        batch_df, epoch_id, target_table, **kwargs
+                    )
+                )
+            else:
+                write_stream = write_stream.toTable(target_table)
+
+            query = write_stream.start()
+            print(f"Started streaming to {target_table} with query ID: {query.id}")
+            return query
+
+        except Exception as e:
+            print(f"An error occurred while writing the stream: {str(e)}")
             raise e
