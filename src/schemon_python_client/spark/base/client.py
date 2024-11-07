@@ -83,7 +83,8 @@ class Client(Base):
         database: str,
         schema: str,
         table: str,
-        options: Optional[Dict[str, str]] = None,
+        columns: Optional[list[str]] = None,
+        use_sql: bool = False,
     ) -> SparkDataFrame:
         """
         Reads data from the specified table in the given database and schema.
@@ -91,7 +92,8 @@ class Client(Base):
         :param database: The database name.
         :param schema: The schema name.
         :param table: The table name.
-        :param options: Optional dictionary of read options (e.g., "filter" or "columns").
+        :param columns: Optional list of columns to select from the table.
+        :param use_sql: Whether to use SQL SELECT clause.
         :return: A SparkDataFrame containing the data from the specified table.
         """
         pass

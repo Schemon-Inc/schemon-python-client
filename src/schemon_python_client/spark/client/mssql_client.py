@@ -1,3 +1,4 @@
+from typing import Optional
 from pyspark.sql import SparkSession, DataFrame as SparkDataFrame
 from pyspark.sql.utils import AnalysisException
 from schemon_python_client.spark.base.client import Client
@@ -158,6 +159,41 @@ class MSSQLClient(Client):
             return df
         except AnalysisException as e:
             print(f"An error occurred while executing query: {str(e)}")
+            raise e
+        
+    def read(
+        self,
+        database: str,
+        schema: str,
+        table: str,
+        columns: Optional[list[str]] = None,
+        use_sql: bool = False,
+    ) -> SparkDataFrame:
+        """
+        Reads data from the specified SQL Server table.
+
+        :param database: The database name.
+        :param schema: The schema name.
+        :param table: The table name.
+        :param columns: Optional list of columns to select from the table.
+        :param use_sql: It has no impacts as MSSQL always uses SQL SELECT clause.
+        :return: A SparkDataFrame containing the data from the specified table.
+        """
+        try:
+            # Construct full table path
+            table_path = f"{database}.{schema}.{table}"
+            select_columns = ", ".join(columns) if columns else "*"
+            query = f"SELECT {select_columns} FROM {table_path}"
+
+            if self.show_sql:
+                print_sql(query)
+
+            # Read data into DataFrame using execute_query method
+            df = self.execute_query(query)
+            return df
+
+        except AnalysisException as e:
+            print(f"An error occurred while reading the table: {str(e)}")
             raise e
 
     def write(

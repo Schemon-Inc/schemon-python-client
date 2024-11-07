@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Dict, Optional
 from delta import DeltaTable
 from pyspark.sql import SparkSession, DataFrame as SparkDataFrame
 from pyspark.sql.utils import AnalysisException
@@ -72,6 +73,33 @@ class DatabricksClient(Client):
         except AnalysisException as e:
             print(f"An error occurred while executing the query: {str(e)}")
             raise e
+        
+    def read(
+        self,
+        database: str,
+        schema: str,
+        table: str,
+        columns: Optional[list[str]] = None,
+        use_sql: bool = False,
+    ) -> SparkDataFrame:
+        try:
+            table_path = f"{database}.{schema}.{table}"
+            df_reader = self.spark.read.format(self.format)
+            df = df_reader.table(table_path)
+
+            if columns:
+                df = df.select(*columns)
+
+            if use_sql:
+                columns_str = ", ".join(columns) if columns else "*"
+                print_sql(f"SELECT {columns_str} FROM {table_path}")
+
+            return df
+
+        except AnalysisException as e:
+            print(f"An error occurred while reading the table: {str(e)}")
+            raise e
+
 
     def write(
         self,
