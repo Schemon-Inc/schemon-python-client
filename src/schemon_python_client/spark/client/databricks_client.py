@@ -11,6 +11,10 @@ from schemon_python_logger.print import print_sql
 from pyspark.sql.types import StructType, TimestampType
 from pyspark.sql.streaming import StreamingQuery
 
+from schemon_python_client.spark.listener.streaming_trigger_listener import (
+    StreamingTriggerListener,
+)
+
 
 class DatabricksClient(Client):
     def __init__(
@@ -398,6 +402,16 @@ class DatabricksClient(Client):
         target_table = f"{database}.{schema}.{table}"
 
         try:
+            if (
+                not hasattr(self.spark, "trigger_listener_added")
+                or not self.spark.trigger_listener_added
+            ):
+                self.spark.streams.addListener(StreamingTriggerListener())
+                self.spark.trigger_listener_added = True
+                print("StreamingTriggerListener added.")
+            else:
+                print("StreamingTriggerListener already exists. Skipping.")
+
             write_stream = (
                 df.writeStream.format("delta")
                 .outputMode(output_mode)
