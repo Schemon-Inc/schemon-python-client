@@ -10,6 +10,11 @@ class StreamingTriggerListener(StreamingQueryListener):
         stage: str = None,
         entity_name: str = None,
     ):
+        """
+        Databricks doesn't stop the streaming application, so awaitTermination() is not needed.
+        However, without awaitTermination() the StreamingTriggerListener's onQueryProgress() and onQueryIdle() events
+        query.awaitTermination()
+        """
         self.logger = logger
         self.stage = stage
         self.entity_name = entity_name
