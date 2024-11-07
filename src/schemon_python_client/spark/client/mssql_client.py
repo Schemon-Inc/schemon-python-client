@@ -80,7 +80,7 @@ class MSSQLClient(Client):
             print(f"An error occurred while checking if the table exists: {str(e)}")
             return False
 
-    def truncate_table(self, schema: str, table: str):
+    def truncate(self, database: str, schema: str, table: str):
         """Truncate the specified table in the given schema."""
         try:
             # Construct the TRUNCATE TABLE SQL statement
