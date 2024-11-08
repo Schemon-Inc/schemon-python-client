@@ -4,7 +4,8 @@ from schemon_python_client.spark.base.base import Base
 from schemon_python_client.spark.base.credential_manager import CredentialManager
 from pyspark.sql.types import StructType
 from pyspark.sql.streaming import StreamingQuery
-from typing import Optional, Dict
+from typing import Any, Optional, Dict
+
 
 class Client(Base):
     def __init__(
@@ -219,24 +220,22 @@ class Client(Base):
         options: dict = None,
         watermark_column: str = None,
         watermark_delay: str = "10 minutes",
-        input_file_name_column: str = "Source",
-        file_modification_time_column: str = "SourceModifiedAt",
+        **kwargs: Dict[str, Any],
     ) -> SparkDataFrame:
         """
-        Reads data from a stream using either regular readStream or Auto Loader.
+        Reads a streaming DataFrame with options to add custom metadata columns.
 
         :param path: The path to read the stream from.
         :param schema: The schema to apply to the streaming data.
-        :param use_autoloader: Whether to use Auto Loader.
-        :param format: The file format (e.g., "parquet", "json").
-        :param options: Additional options for reading.
-        :param watermark_column: Column for event time watermarking.
-        :param watermark_delay: Delay threshold for watermarking.
-        :param input_file_name_column: Column to hold input file names.
-        :param file_modification_time_column: Column for file modification time.
+        :param use_autoloader: Flag to indicate if Auto Loader should be used.
+        :param format: The format of the files (e.g., "parquet", "json", etc.).
+        :param options: Dictionary of options to pass to the reader.
+        :param watermark_column: The column to apply the watermark on.
+        :param watermark_delay: The delay threshold for watermarking (e.g., "10 minutes").
+        :param kwargs: Additional column definitions. Reserved keys include "metadata.full_path" and "metadata.modified".
+                       Values can be literal, column transformations, or callable UDFs (including with arguments).
         :return: A streaming DataFrame.
         """
-        pass
 
     @abstractmethod
     def write_stream(

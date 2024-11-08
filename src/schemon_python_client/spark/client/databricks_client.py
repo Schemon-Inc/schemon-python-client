@@ -15,6 +15,8 @@ from pyspark.sql.streaming import StreamingQuery
 from schemon_python_client.spark.listener.streaming_trigger_listener import (
     StreamingTriggerListener,
 )
+from typing import Any
+from functools import partial
 
 
 class DatabricksClient(Client):
@@ -73,7 +75,7 @@ class DatabricksClient(Client):
         except AnalysisException as e:
             print(f"An error occurred while executing the query: {str(e)}")
             raise e
-        
+
     def read(
         self,
         database: str,
@@ -99,7 +101,6 @@ class DatabricksClient(Client):
         except AnalysisException as e:
             print(f"An error occurred while reading the table: {str(e)}")
             raise e
-
 
     def write(
         self,
@@ -340,11 +341,10 @@ class DatabricksClient(Client):
         options: dict = None,
         watermark_column: str = None,
         watermark_delay: str = "10 minutes",
-        input_file_name_column: str = "Source",
-        file_modification_time_column: str = "SourceModifiedAt",
+        **kwargs: Dict[str, Any],
     ) -> SparkDataFrame:
         """
-        Method to handle reading a stream using either a regular readStream or Auto Loader.
+        Reads a streaming DataFrame with options to add custom metadata columns.
 
         :param path: The path to read the stream from.
         :param schema: The schema to apply to the streaming data.
@@ -353,6 +353,8 @@ class DatabricksClient(Client):
         :param options: Dictionary of options to pass to the reader.
         :param watermark_column: The column to apply the watermark on.
         :param watermark_delay: The delay threshold for watermarking (e.g., "10 minutes").
+        :param kwargs: Additional column definitions. Reserved keys include "metadata.full_path" and "metadata.modified".
+                       Values can be literal, column transformations, or callable UDFs (including with arguments).
         :return: A streaming DataFrame.
         """
         try:
@@ -360,7 +362,6 @@ class DatabricksClient(Client):
                 options = {}
 
             if use_autoloader:
-                # Databricks Autoloader supports csv, json, parquet, text, binaryFile and delta.
                 supported_formats_with_metadata = {
                     "csv",
                     "json",
@@ -368,26 +369,53 @@ class DatabricksClient(Client):
                     "text",
                     "binaryFile",
                 }
-                # Use Auto Loader with .load() method
+
+                # Load data using Auto Loader
                 stream_df = (
                     self.spark.readStream.format("cloudFiles")
                     .option("cloudFiles.format", format)
                     .options(**options)
                     .schema(schema)
                     .load(path)
-                    .withColumn(
-                        input_file_name_column, F.input_file_name()
-                    )  # Add Source column for all formats. For Delta tables in UC, it returns NULL
                 )
 
-                # Conditionally add SourceModifiedAt for supported formats
-                if format in supported_formats_with_metadata:
-                    stream_df = stream_df.withColumn(
-                        file_modification_time_column,
-                        F.col("_metadata.file_modification_time").cast(TimestampType()),
-                    )
+                # Handle reserved metadata keys and custom columns from kwargs
+                for col_name, value in kwargs.items():
+                    if value == "metadata.full_path":
+                        stream_df = stream_df.withColumn(col_name, F.input_file_name())
+                    elif (
+                        value == "metadata.modified"
+                        and format in supported_formats_with_metadata
+                    ):
+                        stream_df = stream_df.withColumn(
+                            col_name,
+                            F.col("_metadata.file_modification_time").cast(
+                                TimestampType()
+                            ),
+                        )
+                    elif callable(value):
+                        # If a function is provided, register it as a UDF if arguments are needed
+                        if isinstance(value, partial):
+                            # If value is a partial function with args, register and apply it
+                            udf_col = F.udf(
+                                value.func,
+                                returnType=value.keywords.get("returnType", None),
+                            )
+                            stream_df = stream_df.withColumn(
+                                col_name, udf_col(*[F.lit(arg) for arg in value.args])
+                            )
+                        else:
+                            # Directly register as a UDF without arguments
+                            udf_col = F.udf(value)
+                            stream_df = stream_df.withColumn(col_name, udf_col())
+                    else:
+                        # Directly add as a literal value or column transformation if specified
+                        stream_df = stream_df.withColumn(
+                            col_name,
+                            F.lit(value) if not isinstance(value, F.Column) else value,
+                        )
             else:
-                # Use regular readStream
+                # Regular readStream
                 stream_df = (
                     self.spark.readStream.format(format).options(**options).load(path)
                 )
