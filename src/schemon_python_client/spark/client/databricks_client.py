@@ -4,14 +4,13 @@ from delta import DeltaTable
 from pyspark.sql import SparkSession, DataFrame as SparkDataFrame
 from pyspark.sql.utils import AnalysisException
 from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, TimestampType
+from pyspark.sql.streaming import StreamingQuery
 from schemon_python_client.spark.base.client import Client
 from schemon_python_client.spark.credential_manager.unity_catalog_credential_manager import (
     UnityCatalogCredentialManager,
 )
 from schemon_python_logger.print import print_sql
-from pyspark.sql.types import StructType, TimestampType
-from pyspark.sql.streaming import StreamingQuery
-
 from schemon_python_client.spark.listener.streaming_trigger_listener import (
     StreamingTriggerListener,
 )
@@ -365,46 +364,45 @@ class DatabricksClient(Client):
                     .load(path)
                 )
 
-                # Handle reserved metadata keys and custom columns from kwargs
-                for col_name, value in kwargs.items():
-                    if value == "metadata.full_path":
-                        stream_df = stream_df.withColumn(col_name, F.input_file_name())
-                    elif (
-                        value == "metadata.modified"
-                        and format in supported_formats_with_metadata
-                    ):
-                        stream_df = stream_df.withColumn(
-                            col_name,
-                            F.col("_metadata.file_modification_time").cast(
-                                TimestampType()
-                            ),
-                        )
-                    elif callable(value):
-                        # If a function is provided, register it as a UDF if arguments are needed
-                        if isinstance(value, partial):
-                            # If value is a partial function with args, register and apply it
-                            udf_col = F.udf(
-                                value.func,
-                                returnType=value.keywords.get("returnType", None),
-                            )
-                            stream_df = stream_df.withColumn(
-                                col_name, udf_col(*[F.lit(arg) for arg in value.args])
-                            )
-                        else:
-                            # Directly register as a UDF without arguments
-                            udf_col = F.udf(value)
-                            stream_df = stream_df.withColumn(col_name, udf_col())
-                    else:
-                        # Directly add as a literal value or column transformation if specified
-                        stream_df = stream_df.withColumn(
-                            col_name,
-                            F.lit(value) if not isinstance(value, F.Column) else value,
-                        )
             else:
                 # Regular readStream
                 stream_df = (
                     self.spark.readStream.format(format).options(**options).load(path)
                 )
+
+            # Handle reserved metadata keys and custom columns from kwargs
+            for col_name, value in kwargs.items():
+                if value == "metadata.full_path":
+                    stream_df = stream_df.withColumn(col_name, F.input_file_name())
+                elif (
+                    value == "metadata.modified"
+                    and format in supported_formats_with_metadata
+                ):
+                    stream_df = stream_df.withColumn(
+                        col_name,
+                        F.col("_metadata.file_modification_time").cast(TimestampType()),
+                    )
+                elif callable(value):
+                    # If a function is provided, register it as a UDF if arguments are needed
+                    if isinstance(value, partial):
+                        # If value is a partial function with args, register and apply it
+                        udf_col = F.udf(
+                            value.func,
+                            returnType=value.keywords.get("returnType", None),
+                        )
+                        stream_df = stream_df.withColumn(
+                            col_name, udf_col(*[F.lit(arg) for arg in value.args])
+                        )
+                    else:
+                        # Directly register as a UDF without arguments
+                        udf_col = F.udf(value)
+                        stream_df = stream_df.withColumn(col_name, udf_col())
+                else:
+                    # Directly add as a literal value or column transformation if specified
+                    stream_df = stream_df.withColumn(
+                        col_name,
+                        F.lit(value) if not isinstance(value, F.Column) else value,
+                    )
 
             # Apply watermarking if both column and delay are specified
             if watermark_column and watermark_delay:
