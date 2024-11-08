@@ -27,14 +27,17 @@ class StreamingTriggerListener(StreamingQueryListener):
             print(message)
 
     def onQueryProgress(self, event):
-        message = f"Query running: {event.id} | Trigger executed at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        """
+        QueryProgressEvent event doesn't have id unlike QueryStartedEvent and QueryTerminatedEvent.
+        """
+        message = f"Trigger executed at {time.strftime('%Y-%m-%d %H:%M:%S')}"
         if self.logger:
             self.logger.info(message, self.stage, self.entity_name)
         else:
             print(message)
 
     def onQueryIdle(self, event):
-        message = f"Query running: {event.id} | Trigger is idle at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+        message = f"Trigger is idle at {time.strftime('%Y-%m-%d %H:%M:%S')}"
         if self.logger:
             self.logger.info(message, self.stage, self.entity_name)
         else:
