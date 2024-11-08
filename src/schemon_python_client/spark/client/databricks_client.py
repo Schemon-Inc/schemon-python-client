@@ -343,20 +343,6 @@ class DatabricksClient(Client):
         watermark_delay: str = "10 minutes",
         **kwargs: Dict[str, Any],
     ) -> SparkDataFrame:
-        """
-        Reads a streaming DataFrame with options to add custom metadata columns.
-
-        :param path: The path to read the stream from.
-        :param schema: The schema to apply to the streaming data.
-        :param use_autoloader: Flag to indicate if Auto Loader should be used.
-        :param format: The format of the files (e.g., "parquet", "json", etc.).
-        :param options: Dictionary of options to pass to the reader.
-        :param watermark_column: The column to apply the watermark on.
-        :param watermark_delay: The delay threshold for watermarking (e.g., "10 minutes").
-        :param kwargs: Additional column definitions. Reserved keys include "metadata.full_path" and "metadata.modified".
-                       Values can be literal, column transformations, or callable UDFs (including with arguments).
-        :return: A streaming DataFrame.
-        """
         try:
             if options is None:
                 options = {}
