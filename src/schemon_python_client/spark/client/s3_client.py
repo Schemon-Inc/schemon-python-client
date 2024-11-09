@@ -1,30 +1,47 @@
 import os
+from typing import Optional
 import boto3
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from schemon_python_client.spark.base.client import Client
 from schemon_python_client.spark.credential_manager.s3_credential_manager import (
     S3CredentialManager,
 )
+from pyspark.sql import SparkSession, DataFrame as SparkDataFrame
 
 
 class S3Client(Client):
-    def __init__(self, s3_credential_manager: S3CredentialManager, region: str = None):
+    def __init__(
+        self,
+        spark: SparkSession,
+        credential_manager: S3CredentialManager,
+        platform: str,
+        format: str,
+        region: str = "ca-central-1",
+        driver_type: str = "s3a",
+    ):
         """
         Initialize the S3Client with S3 credentials from the S3CredentialManager.
         :param s3_credential_manager: The S3CredentialManager instance that provides credentials.
         :param region: The AWS region where the S3 service is located.
         """
-        super().__init__(provider="aws", name="S3")
-        self.s3_credential_manager = s3_credential_manager
+        super().__init__(
+            spark=spark,
+            provider="aws",
+            name="s3",
+            platform=platform,
+            format=format,
+            credential_manager=credential_manager,
+        )
         self.region = region
-        self.s3_client = self._initialize_s3_client()
+        self.driver_type = driver_type
+        self.boto3_client = self._initialize_boto3_client()
 
-    def _initialize_s3_client(self):
+    def _initialize_boto3_client(self):
         """
-        Initialize the S3 client using credentials from S3CredentialManager and store it as a class property.
+        Initialize the boto3 client using credentials from S3CredentialManager and store it as a class property.
         """
         try:
-            credentials = self.s3_credential_manager.get_credentials()
+            credentials = self.credential_manager.get_credentials()
             if not credentials:
                 raise NoCredentialsError
 
@@ -33,7 +50,7 @@ class S3Client(Client):
                 "s3",
                 aws_access_key_id=credentials["access_key"],
                 aws_secret_access_key=credentials["secret_access_key"],
-                region_name="ca-central-1",  # self.region,
+                region_name=self.region,
             )
         except (NoCredentialsError, PartialCredentialsError):
             print("Error: Invalid or incomplete credentials.")
@@ -43,9 +60,9 @@ class S3Client(Client):
         """
         List all S3 buckets available under the provided credentials.
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
-                response = self.s3_client.list_buckets()
+                response = self.boto3_client.list_buckets()
                 print("Buckets available:")
                 for bucket in response["Buckets"]:
                     print(f" - {bucket['Name']}")
@@ -64,7 +81,7 @@ class S3Client(Client):
         :param recursive: If True, lists all objects recursively under the prefix.
         :return: A modified response dict with 'type_' key added to each object (file or directory).
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
                 response_files = {
                     "IsTruncated": False,  # Will change based on response if there is pagination
@@ -86,7 +103,7 @@ class S3Client(Client):
                     if continuation_token:
                         list_kwargs["ContinuationToken"] = continuation_token
 
-                    response = self.s3_client.list_objects_v2(**list_kwargs)
+                    response = self.boto3_client.list_objects_v2(**list_kwargs)
 
                     # Add 'type_' key: 'file' for regular files, 'directory' for directories
                     if "Contents" in response:
@@ -124,11 +141,11 @@ class S3Client(Client):
         :param file_path: Path to the file to upload.
         :param object_name: S3 object name (optional). If not specified, the file name will be used.
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
                 if object_name is None:
                     object_name = file_path.split(os.sep)[-1]
-                self.s3_client.upload_file(file_path, bucket_name, object_name)
+                self.boto3_client.upload_file(file_path, bucket_name, object_name)
                 print(f"Uploaded {file_path} to {bucket_name}/{object_name}")
             except Exception as e:
                 print(f"An error occurred: {str(e)}")
@@ -157,9 +174,9 @@ class S3Client(Client):
         :param bucket_name: Name of the S3 bucket.
         :param object_name: Name of the object to delete from the S3 bucket.
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
-                self.s3_client.delete_object(Bucket=bucket_name, Key=object_name)
+                self.boto3_client.delete_object(Bucket=bucket_name, Key=object_name)
                 print(f"Deleted object {object_name} from {bucket_name}.")
             except Exception as e:
                 print(f"An error occurred: {str(e)}")
@@ -171,9 +188,9 @@ class S3Client(Client):
         :param object_name: Name of the object to download.
         :param file_path: Local file path to save the downloaded object.
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
-                self.s3_client.download_file(bucket_name, object_name, file_path)
+                self.boto3_client.download_file(bucket_name, object_name, file_path)
                 print(f"Downloaded {object_name} from {bucket_name} to {file_path}")
             except Exception as e:
                 print(f"An error occurred: {str(e)}")
@@ -187,9 +204,9 @@ class S3Client(Client):
         :param s3_directory: S3 directory (prefix) to download the files from.
         :param local_directory: Local directory path to save the downloaded files.
         """
-        if self.s3_client:
+        if self.boto3_client:
             try:
-                response = self.s3_client.list_objects_v2(
+                response = self.boto3_client.list_objects_v2(
                     Bucket=bucket_name, Prefix=s3_directory
                 )
                 if "Contents" in response:
@@ -206,3 +223,45 @@ class S3Client(Client):
                         self.download_object(bucket_name, s3_file_path, local_file_path)
             except Exception as e:
                 print(f"An error occurred: {str(e)}")
+
+    def get_object_metadata(self, bucket_name: str, object_key: str):
+        """
+        Retrieve metadata for an S3 object, including the last modified timestamp.
+        """
+        if self.boto3_client:
+            try:
+                # Retrieve the object's metadata
+                response = self.boto3_client.head_object(
+                    Bucket=bucket_name, Key=object_key
+                )
+
+                # Extract relevant metadata fields
+                metadata = {
+                    "LastModified": response["LastModified"],
+                    "ContentLength": response["ContentLength"],
+                    "ContentType": response["ContentType"],
+                    "ETag": response["ETag"],
+                    "Metadata": response.get("Metadata", {}),  # Custom metadata
+                }
+
+                return metadata
+
+            except self.boto3_client.exceptions.NoSuchKey:
+                print(f"Object '{object_key}' not found in bucket '{bucket_name}'.")
+                return None
+            except Exception as e:
+                print(f"Error retrieving metadata: {e}")
+                return None
+
+    def read(
+        self,
+        database: str = None,
+        schema: str = None,
+        table: str = None,
+        columns: Optional[list[str]] = None,
+        use_sql: bool = False,
+    ) -> SparkDataFrame:
+        """
+        Reading from S3 should be using either from directories - reader/excel or reader/flatfile
+        """
+        NotImplemented

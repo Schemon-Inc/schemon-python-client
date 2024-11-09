@@ -13,18 +13,18 @@ def read(
     spark: SparkSession,
     file_path: str,
     format: str = "csv",
-    schema: StructType = None,
+    struct_type: StructType = None,
     append_columns: Dict[str, Dict[str, DataType]] = None,
     reader_options: Dict[str, Any] = None,
 ) -> SparkDataFrame:
     """
-    Reads data from the specified file path, applies the given schema and format,
+    Reads data from the specified file path, applies the given struct_type and format,
     and appends additional columns with specified values and types.
 
     :param spark: The Spark session.
     :param file_path: Path to the input file.
-    :param format: The file format (csv, json, parquet, avro).
-    :param schema: The schema to apply to the DataFrame.
+    :param format: The file format (csv, tsv, json, parquet, avro).
+    :param struct_type: The struct_type to apply to the DataFrame.
     :param append_columns: Dictionary specifying columns to append, where each key
                            is a column name, and each value is a dictionary with
                            'value' and 'type' keys.
@@ -40,23 +40,23 @@ def read(
     append_columns = append_columns or {}
     reader_options = reader_options or {}
 
-    # Read the file with the specified format, schema, and options
+    # Read the file with the specified format, schema/struct_type, and options
     if format == "csv" or format == "tsv":
-        df = spark.read.csv(file_path, schema=schema, **reader_options)
+        df = spark.read.csv(file_path, schema=struct_type, **reader_options)
     elif format == "json":
-        df = spark.read.json(file_path, schema=schema, **reader_options)
+        df = spark.read.json(file_path, schema=struct_type, **reader_options)
     elif format == "parquet":
-        df = spark.read.parquet(file_path, schema=schema, **reader_options)
+        df = spark.read.parquet(file_path, schema=struct_type, **reader_options)
     elif format == "avro":
-        # Apply schema after loading if schema is provided for Avro
-        if schema:
+        # Apply struct_type after loading if struct_type is provided for Avro
+        if struct_type:
             df = (
                 spark.read.format("avro")
                 .load(file_path, **reader_options)
                 .selectExpr(
                     *[
                         f"CAST({field.name} AS {field.dataType.simpleString()}) AS {field.name}"
-                        for field in schema
+                        for field in struct_type
                     ]
                 )
             )
