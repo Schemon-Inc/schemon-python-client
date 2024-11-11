@@ -101,6 +101,7 @@ class MSSQLClient(Client):
             # Execute the query
             credentials = self.credential_manager.get_credentials()
             conn = get_mssql_jdbc_connection(
+                self.spark,
                 self.connection_url,
                 credentials["username"],
                 credentials["password"],
@@ -259,6 +260,7 @@ class MSSQLClient(Client):
         try:
             if self.driver_type == "spark" or self.driver_type == "databricks":
                 conn = get_mssql_jdbc_connection(
+                    self.spark,
                     self.connection_url,
                     credentials["username"],
                     credentials["password"],
@@ -285,6 +287,7 @@ class MSSQLClient(Client):
         try:
             if self.driver_type == "spark" or self.driver_type == "databricks":
                 conn = get_mssql_jdbc_connection(
+                    self.spark,
                     self.connection_url,
                     credentials["username"],
                     credentials["password"],
@@ -352,6 +355,7 @@ class MSSQLClient(Client):
 
                 # Create the JDBC connection and execute the merge query
                 conn = get_mssql_jdbc_connection(
+                    self.spark,
                     self.connection_url,
                     credentials["username"],
                     credentials["password"],
