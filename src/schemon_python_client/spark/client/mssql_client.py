@@ -23,6 +23,7 @@ class MSSQLClient(Client):
         credential_manager: MSSQLCredentialManager,
         driver_type: str,
         show_sql: bool = False,
+        connection_options: dict = None,
     ):
         super().__init__(
             spark=spark,
@@ -33,33 +34,48 @@ class MSSQLClient(Client):
         self.server = server
         self.database = database
         self.driver_type = driver_type
-        self.connection_url = self._initialize_jdbc_connection_url()
+        self.connection_url = self._initialize_jdbc_connection_url(connection_options)
         self.show_sql = show_sql
 
-    def _initialize_jdbc_connection_url(self):
+    def _initialize_jdbc_connection_url(self, connection_options: dict) -> str:
         if self.driver_type == "jdbc":
             try:
                 credentials = self.credential_manager.get_credentials()
                 if not credentials:
                     raise ValueError("No MSSQL credentials provided")
 
-                # Build JDBC connection URL
-                return f"jdbc:sqlserver://{self.server};databaseName={self.database};user={credentials['username']};password={credentials['password']}"
+                # Start building the JDBC connection URL with credentials
+                base_url = (
+                    f"jdbc:sqlserver://{self.server};"
+                    f"databaseName={self.database};"
+                    f"user={credentials['username']};"
+                    f"password={credentials['password']}"
+                )
+
+                # Append connection options to the URL
+                options = ";".join([f"{k}={v}" for k, v in connection_options.items()])
+                return f"{base_url};{options}" if options else base_url
 
             except ValueError as e:
                 print(f"Error: {str(e)}")
                 return None
+
         elif self.driver_type == "spark" or self.driver_type == "databricks":
-            return f"jdbc:sqlserver://{self.server};databaseName={self.database}"
+            # Basic URL without credentials, with optional connection options
+            base_url = f"jdbc:sqlserver://{self.server};databaseName={self.database}"
+            options = ";".join([f"{k}={v}" for k, v in connection_options.items()])
+            return f"{base_url};{options}" if options else base_url
+
         else:
             raise ValueError(
                 "Invalid driver type. Supported driver types are: 'jdbc', 'spark', 'databricks'."
             )
 
+
     def check_database_exists(self, database: str) -> bool:
         """Check if the specified database exists in the SQL Server."""
         try:
-            query = f"SELECT DB_ID('{database}')"
+            query = f"SELECT DB_ID('{database}') as DB_ID"
             df = self.execute_query(query)
             # If DB_ID returns a non-null value, the database exists
             return df.collect()[0][0] is not None
