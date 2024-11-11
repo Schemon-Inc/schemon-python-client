@@ -24,10 +24,11 @@ class MSSQLClient(Client):
         driver_type: str,
         show_sql: bool = False,
         connection_options: dict = None,
+        provider: str = "azure",
     ):
         super().__init__(
             spark=spark,
-            provider="azure",
+            provider=provider,
             name="MSSQL",
             credential_manager=credential_manager,
         )
@@ -70,7 +71,6 @@ class MSSQLClient(Client):
             raise ValueError(
                 "Invalid driver type. Supported driver types are: 'jdbc', 'spark', 'databricks'."
             )
-
 
     def check_database_exists(self, database: str) -> bool:
         """Check if the specified database exists in the SQL Server."""
@@ -176,7 +176,7 @@ class MSSQLClient(Client):
         except AnalysisException as e:
             print(f"An error occurred while executing query: {str(e)}")
             raise e
-        
+
     def read(
         self,
         database: str,
