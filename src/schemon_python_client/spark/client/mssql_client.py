@@ -5,13 +5,8 @@ from schemon_python_client.spark.base.client import Client
 from schemon_python_client.spark.credential_manager.mssql_credential_manager import (
     MSSQLCredentialManager,
 )
-from schemon_python_client.spark.helper.mssql import create_mssql_jdbc_connection
+from schemon_python_client.spark.helper.mssql import get_mssql_jdbc_connection
 from schemon_python_logger.print import print_sql
-
-
-def execute_spark(conn, query):
-    stmt = conn.createStatement()
-    stmt.execute(query)
 
 
 class MSSQLClient(Client):
@@ -105,15 +100,13 @@ class MSSQLClient(Client):
 
             # Execute the query
             credentials = self.credential_manager.get_credentials()
-            conn = create_mssql_jdbc_connection(
-                self.spark,
-                self.server,
-                self.database,
+            conn = get_mssql_jdbc_connection(
+                self.connection_url,
                 credentials["username"],
                 credentials["password"],
             )
-            execute_spark(conn, truncate_query)
-
+            stmt = conn.createStatement()
+            stmt.execute(truncate_query)
             print(f"Successfully truncated table {schema}.{table}")
 
         except Exception as e:
@@ -265,14 +258,13 @@ class MSSQLClient(Client):
         credentials = self.credential_manager.get_credentials()
         try:
             if self.driver_type == "spark" or self.driver_type == "databricks":
-                conn = create_mssql_jdbc_connection(
-                    self.spark,
-                    self.server,
-                    self.database,
+                conn = get_mssql_jdbc_connection(
+                    self.connection_url,
                     credentials["username"],
                     credentials["password"],
                 )
-                execute_spark(conn, update_query)
+                stmt = conn.createStatement()
+                stmt.execute(update_query)
 
                 print(f"Successfully updated rows in {table} where {condition}")
             else:
@@ -292,14 +284,13 @@ class MSSQLClient(Client):
         credentials = self.credential_manager.get_credentials()
         try:
             if self.driver_type == "spark" or self.driver_type == "databricks":
-                conn = create_mssql_jdbc_connection(
-                    self.spark,
-                    self.server,
-                    self.database,
+                conn = get_mssql_jdbc_connection(
+                    self.connection_url,
                     credentials["username"],
                     credentials["password"],
                 )
-                execute_spark(conn, delete_query)
+                stmt = conn.createStatement()
+                stmt.execute(delete_query)
             else:
                 raise NotImplementedError(
                     "Write is not supported for this driver type."
@@ -360,16 +351,15 @@ class MSSQLClient(Client):
                     print_sql(merge_query)
 
                 # Create the JDBC connection and execute the merge query
-                conn = create_mssql_jdbc_connection(
-                    self.spark,
-                    self.server,
-                    self.database,
+                conn = get_mssql_jdbc_connection(
+                    self.connection_url,
                     credentials["username"],
                     credentials["password"],
                 )
 
                 # Execute the merge query using Spark JDBC
-                execute_spark(conn, merge_query)
+                stmt = conn.createStatement()
+                stmt.execute(merge_query)
 
                 print(
                     f"Successfully merged data into {target_table} from the Spark DataFrame."
