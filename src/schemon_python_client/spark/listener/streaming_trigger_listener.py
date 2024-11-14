@@ -1,12 +1,12 @@
 import time
 from pyspark.sql.streaming import StreamingQueryListener
-from schemon_python_logger.logger import Logger
+from schemon_python_logger.logger import SchemonPythonLogger
 
 
 class StreamingTriggerListener(StreamingQueryListener):
     def __init__(
         self,
-        logger: Logger = None,
+        logger: SchemonPythonLogger = None,
         stage: str = None,
         entity_name: str = None,
     ):
